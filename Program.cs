@@ -3,6 +3,7 @@ using System.Management;
 using System.IO;
 using System.Threading;
 using NAudio.Wave;
+using NAudio.CoreAudioApi;
 
 class Program
 {
@@ -52,7 +53,8 @@ class Program
                 return;
 
             // Disparamos la sesión en background para no bloquear el watcher
-            ThreadPool.QueueUserWorkItem(_ => {
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
                 try { PlayAlertSession(); }
                 finally { Interlocked.Exchange(ref _isPlayingSession, 0); }
             });
@@ -70,41 +72,50 @@ class Program
         const int maxRepeats = 4;
         TimeSpan maxTotal = TimeSpan.FromSeconds(30);
 
-        // Si no hay mp3, beep como fallback pero igual respeta límites
         bool hasAudio = _audioPath != null && File.Exists(_audioPath);
 
         var sessionStart = DateTime.UtcNow;
         int count = 0;
 
-        while (count < maxRepeats && (DateTime.UtcNow - sessionStart) < maxTotal)
+        // <<< Subimos volumen y guardamos estado original
+        var volState = BoostVolumeToMax();
+
+        try
         {
-            if (!hasAudio)
+            while (count < maxRepeats && (DateTime.UtcNow - sessionStart) < maxTotal)
             {
-                Console.Beep(1000, 300);
-                count++;
-                continue;
-            }
-
-            using var audioFile = new AudioFileReader(_audioPath!);
-            using var output = new WaveOutEvent();
-            output.Init(audioFile);
-            output.Play();
-
-            // Espera activa mientras suena, pero corta al cumplir 30s totales
-            while (output.PlaybackState == PlaybackState.Playing)
-            {
-                if ((DateTime.UtcNow - sessionStart) >= maxTotal)
+                if (!hasAudio)
                 {
-                    // Corte inmediato al llegar a 30s
-                    output.Stop();
-                    break;
+                    Console.Beep(1000, 300);
+                    count++;
+                    continue;
                 }
-                Thread.Sleep(50);
-            }
 
-            count++;
+                using var audioFile = new AudioFileReader(_audioPath!);
+                using var output = new WaveOutEvent();
+                output.Init(audioFile);
+                output.Play();
+
+                while (output.PlaybackState == PlaybackState.Playing)
+                {
+                    if ((DateTime.UtcNow - sessionStart) >= maxTotal)
+                    {
+                        output.Stop(); // corte inmediato a los 30s
+                        break;
+                    }
+                    Thread.Sleep(50);
+                }
+
+                count++;
+            }
+        }
+        finally
+        {
+            // <<< Restauramos el volumen/mute original
+            RestoreVolume(volState);
         }
     }
+
 
     static string GetAudioPath()
     {
@@ -116,6 +127,37 @@ class Program
         Directory.CreateDirectory(Path.GetDirectoryName(shared)!);
         return shared;
     }
+
+    // Guarda/ajusta volumen del dispositivo de salida por defecto (Render, Multimedia)
+    static (float prevVolume, bool prevMute) BoostVolumeToMax()
+    {
+        using var enumerator = new MMDeviceEnumerator();
+        var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+
+        float prev = device.AudioEndpointVolume.MasterVolumeLevelScalar; // 0.0 - 1.0
+        bool prevMute = device.AudioEndpointVolume.Mute;
+
+        // Subimos a tope y desmuteamos
+        device.AudioEndpointVolume.Mute = false;
+        device.AudioEndpointVolume.MasterVolumeLevelScalar = 1.0f;
+        return (prev, prevMute);
+    }
+
+    static void RestoreVolume((float prevVolume, bool prevMute) state)
+    {
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+            device.AudioEndpointVolume.MasterVolumeLevelScalar = Math.Clamp(state.prevVolume, 0f, 1f);
+            device.AudioEndpointVolume.Mute = state.prevMute;
+        }
+        catch
+        {
+            // Si falla la restauración, no matamos la app; en aula es mejor sonar que fallar.
+        }
+    }
+
 
     static void Stop()
     {

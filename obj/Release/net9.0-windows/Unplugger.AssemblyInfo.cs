@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Unplugger")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2521e06034a896703d35b2e0551ab4ec1f4ca088")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b86c12212c8035e59906bc6dedcc2cf438be5eb5")]
 [assembly: System.Reflection.AssemblyProductAttribute("Unplugger")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Unplugger")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
