@@ -636,11 +636,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Estudiante\\Desktop\\Gab\\Unplugger\\Unplugger\\Unplugger.csproj",
+      "projectUniqueName": "C:\\Users\\Estudiante\\Desktop\\Gab\\Unplugger\\Unplugger.csproj",
       "projectName": "Unplugger",
-      "projectPath": "C:\\Users\\Estudiante\\Desktop\\Gab\\Unplugger\\Unplugger\\Unplugger.csproj",
+      "projectPath": "C:\\Users\\Estudiante\\Desktop\\Gab\\Unplugger\\Unplugger.csproj",
       "packagesPath": "C:\\Users\\Estudiante\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Estudiante\\Desktop\\Gab\\Unplugger\\Unplugger\\obj\\",
+      "outputPath": "C:\\Users\\Estudiante\\Desktop\\Gab\\Unplugger\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

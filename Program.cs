@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Linq;
 using System.Management;
 using System.IO;
 using System.Threading;
@@ -9,10 +8,10 @@ class Program
 {
     static ManagementEventWatcher? _removeWatcher;
 
-    // Reproductor global
     static string? _audioPath;
-    static DateTime _lastPlayed = DateTime.MinValue;
-    static readonly TimeSpan _cooldown = TimeSpan.FromSeconds(2);
+
+    // >>> NUEVO: flag de sesión para impedir solapamientos
+    static int _isPlayingSession = 0; // 0 = libre, 1 = reproduciendo
 
     static void Main()
     {
@@ -23,13 +22,13 @@ class Program
         {
             Console.Error.WriteLine($"No encontré el audio en: {_audioPath}");
             Console.Error.WriteLine("Coloca 'alarm.mp3' junto al .exe o en C:\\ProgramData\\Unplugger\\alarm.mp3");
+            // seguimos escuchando eventos igual (hará beep si no hay mp3)
         }
         else
         {
-            Console.WriteLine($"Audio cargado: {_audioPath}");
+            Console.WriteLine($"Audio listo: {_audioPath}");
         }
 
-        // Suscripción WMI a remociones USB
         var removeQuery = new WqlEventQuery(
             "__InstanceDeletionEvent",
             new TimeSpan(0, 0, 2),
@@ -41,65 +40,78 @@ class Program
         _removeWatcher.Start();
 
         Console.WriteLine("Escuchando desconexiones USB... Ctrl+C para salir.");
-        while (_removeWatcher != null)
-        {
-            Thread.Sleep(500);
-        }
+        while (_removeWatcher != null) Thread.Sleep(500);
     }
 
     static void OnUsbRemoved(object sender, EventArrivedEventArgs e)
     {
         try
         {
-            var now = DateTime.UtcNow;
-            if (now - _lastPlayed < _cooldown)
+            // >>> NUEVO: si ya hay una sesión sonando, ignoramos este evento
+            if (Interlocked.Exchange(ref _isPlayingSession, 1) == 1)
                 return;
 
-            _lastPlayed = now;
-            PlayAlert();
+            // Disparamos la sesión en background para no bloquear el watcher
+            ThreadPool.QueueUserWorkItem(_ => {
+                try { PlayAlertSession(); }
+                finally { Interlocked.Exchange(ref _isPlayingSession, 0); }
+            });
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[ERR] {ex.Message}");
+            Interlocked.Exchange(ref _isPlayingSession, 0);
         }
     }
 
-    static void PlayAlert()
+    // >>> NUEVO: sesión con límites duros (4 repeticiones o 30s)
+    static void PlayAlertSession()
     {
-        if (_audioPath == null || !File.Exists(_audioPath))
-        {
-            Console.Beep(1000, 300);
-            return;
-        }
+        const int maxRepeats = 4;
+        TimeSpan maxTotal = TimeSpan.FromSeconds(30);
 
-        try
-        {
-            using var audioFile = new AudioFileReader(_audioPath);
-            using var outputDevice = new WaveOutEvent();
-            outputDevice.Init(audioFile);
-            outputDevice.Play();
+        // Si no hay mp3, beep como fallback pero igual respeta límites
+        bool hasAudio = _audioPath != null && File.Exists(_audioPath);
 
-            // Esperar hasta que termine (bloqueante)
-            while (outputDevice.PlaybackState == PlaybackState.Playing)
+        var sessionStart = DateTime.UtcNow;
+        int count = 0;
+
+        while (count < maxRepeats && (DateTime.UtcNow - sessionStart) < maxTotal)
+        {
+            if (!hasAudio)
             {
-                Thread.Sleep(100);
+                Console.Beep(1000, 300);
+                count++;
+                continue;
             }
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[AUDIO] {ex.Message}");
-            Console.Beep(1000, 300);
+
+            using var audioFile = new AudioFileReader(_audioPath!);
+            using var output = new WaveOutEvent();
+            output.Init(audioFile);
+            output.Play();
+
+            // Espera activa mientras suena, pero corta al cumplir 30s totales
+            while (output.PlaybackState == PlaybackState.Playing)
+            {
+                if ((DateTime.UtcNow - sessionStart) >= maxTotal)
+                {
+                    // Corte inmediato al llegar a 30s
+                    output.Stop();
+                    break;
+                }
+                Thread.Sleep(50);
+            }
+
+            count++;
         }
     }
 
     static string GetAudioPath()
     {
-        // 1) Junto al ejecutable
         var exeDir = AppContext.BaseDirectory;
         var local = Path.Combine(exeDir, "alarm.mp3");
         if (File.Exists(local)) return local;
 
-        // 2) Carpeta de datos compartidos
         var shared = @"C:\ProgramData\Unplugger\alarm.mp3";
         Directory.CreateDirectory(Path.GetDirectoryName(shared)!);
         return shared;
