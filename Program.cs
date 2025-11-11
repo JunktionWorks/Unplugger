@@ -4,12 +4,16 @@ using System.IO;
 using System.Threading;
 using NAudio.Wave;
 using NAudio.CoreAudioApi;
+using System.Diagnostics;
 
 class Program
 {
     static ManagementEventWatcher? _removeWatcher;
 
     static string? _audioPath;
+
+    static readonly string AlertUrl = "https://c.tenor.com/J3sih0hnKLwAAAAd/tenor.gif";
+
 
     // >>> NUEVO: flag de sesión para impedir solapamientos
     static int _isPlayingSession = 0; // 0 = libre, 1 = reproduciendo
@@ -66,9 +70,31 @@ class Program
         }
     }
 
+    static void OpenAlertLinkOnce()
+    {
+        try
+        {
+            // Abre en el navegador predeterminado, no bloquea el hilo
+            var psi = new ProcessStartInfo
+            {
+                FileName = AlertUrl,
+                UseShellExecute = true
+            };
+            Process.Start(psi);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[URL] {ex.Message}");
+        }
+    }
+
+
     // >>> NUEVO: sesión con límites duros (4 repeticiones o 30s)
     static void PlayAlertSession()
     {
+
+        OpenAlertLinkOnce();
+
         const int maxRepeats = 4;
         TimeSpan maxTotal = TimeSpan.FromSeconds(30);
 
